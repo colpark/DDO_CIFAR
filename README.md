@@ -8,9 +8,6 @@ by Jae Hyun Lim\*, Nikola B Kovachki\*, Ricardo Baptista\*, Christopher Beckham,
 
 [[arXiv](https://arxiv.org/abs/2302.07400)]
 
-## Experiments on Gaussian Mixture, Navier-Stokes, and Volcano Dataset
-We will update the repo soon.
-
 ## Experiments on MNIST-SDF Dataset
 Here's example command lines for training DDO and GANO models
 
@@ -35,7 +32,7 @@ python main.py --command_type=train \
 ### GANO
 
 ```
-python gano.py --command_type train \
+python gano.py --command_type=train \
   --exp_path=${EXP_PATH} \
   --seed=1 --print_every=1000 --save_every=5000 --ckpt_every=100000 --eval_every=20000 --vis_every=10000 --resume \
   --data=${DATA_PATH} --dataset=mnistsdf_32 --train_img_height=32 --input_dim=1 --coord_dim=2 \
@@ -46,14 +43,49 @@ python gano.py --command_type train \
   --vis_batch_size=36
 ```
 
-### Evaluations
-Run following notebook files
+### Sample generation
+Run the following notebook files
 - `notebooks/mnistsdf_sample_ddo.ipynb`
 - `notebooks/mnistsdf_sample_gano.ipynb`
-  
+
+### Evaluations
+Save the below model as `${EXP_PATH}/checkpoint_fid.pt`
+```
+python main.py --command_type=test \
+  --exp_path=${EXP_PATH} \
+  --data=${DATA_PATH} --dataset=mnistsdf_32 --train_img_height=32 --input_dim=1 --coord_dim=2 --transform=sdf \
+  --num_steps=250 --sampler=denoise --s_min=0.0001 \
+  --upsample --upsample_resolution=64 \
+  --eval_use_ema --ema_decay=0.999 --eval_img_height=64 --eval_batch_size=1024 --eval_num_samples=50000 --eval_resize_mode=tensor --eval_interpolation=bilinear --fid_dir=${FID_PATH} \
+  --checkpoint_file=checkpoint_fid.pt \
+  --eval_fid
+```
+```
+python gano.py --command_type=test \
+  --exp_path=${EXP_PATH} \
+  --data=${DATA_PATH} --dataset=mnistsdf_32 --train_img_height=32 --input_dim=1 --coord_dim=2 \
+  --model=gano-uno --modes=32 --d_co_domain=64 --lmbd_grad=10.0 --n_critic=10 \
+  --upsample --upsample_resolution=64 \
+  --eval_use_ema --ema_decay=0.999 --eval_img_height=64 --eval_batch_size=1024 --eval_num_samples=50000 --eval_resize_mode=tensor --eval_interpolation=bilinear --fid_dir=${FID_PATH} \
+  --checkpoint_file=checkpoint_fid.pt \
+  --eval_fid
+```
+
 ### Pre-trained models (Google Drive)
+Save the model as `${EXP_PATH}/checkpoint_fid.pt`
 - DDO  [[link](https://drive.google.com/file/d/1aMKEIEMI2sZKeK0TbFwHxDUNh6B-bP2l/view)]
 - GANO [[link](https://drive.google.com/file/d/1aDa6sf5WFbW85kiTewvJbN55fhFZbx1M/view)]
+
+## Experiments in Appendix K
+Run the following notebook files
+- `notebooks/afhq_fitting_ddo_big.ipynb`
+- `notebooks/afhq_fitting_ddo.ipynb`
+- `notebooks/afhq_fitting_uno.ipynb`
+- `notebooks/afhq_fitting_fno.ipynb`
+- `notebooks/afhq_fitting_sparse_unet_cc_det.ipynb`
+
+## Experiments on Gaussian Mixture, Navier-Stokes, Volcano Dataset, and Darcyflow
+We will update the repo.
 
 ## License
 MIT License

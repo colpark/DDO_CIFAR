@@ -1,8 +1,10 @@
 import os
+import tqdm
 import functools
 import time
 import argparse
 import json
+import socket
 import numpy as np
 import torch
 import torch.nn as nn
@@ -13,7 +15,7 @@ from thirdparty.random_fields import *
 from utils import utils
 from utils import datasets
 from utils.ema import EMA
-from utils.utils import save_checkpoint, load_checkpoint
+from utils.utils import save_checkpoint, load_checkpoint, count_parameters_in_M
 from utils.visualize import get_grid_image
 from utils.evaluate import compute_feature_stats_for_dataset, compute_feature_stats_for_generator
 from utils.evaluate import calculate_frechet_distance, calculate_precision_recall
@@ -113,7 +115,7 @@ class SpectralConv2d(nn.Module):
             self.modes2 = modes2
         else:
             self.modes1 = dim1//2-1 #if not given take the highest number of modes can be taken
-            self.modes2 = dim2//2 
+            self.modes2 = dim2//2
         self.scale = (1 / (2*in_channels))**(1.0/2.0)
         self.weights1 = nn.Parameter(self.scale * (torch.randn(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat)))
         self.weights2 = nn.Parameter(self.scale * (torch.randn(in_channels, out_channels, self.modes1, self.modes2, dtype=torch.cfloat)))
@@ -158,7 +160,7 @@ class pointwise_op(nn.Module):
         return x_out
 
 class Generator(nn.Module):
-    def __init__(self, in_d_co_domain, d_co_domain, half_modes, pad = 0, factor = 3/4):
+    def __init__(self, in_d_co_domain, d_co_domain, half_modes, pad=0, factor=3/4):
         super(Generator, self).__init__()
 
         """
@@ -170,11 +172,11 @@ class Generator(nn.Module):
 
         input: the solution of the coefficient function and locations (a(x, y), x, y)
         input shape: (batchsize, x=s, y=s, c=3)
-        output: the solution 
+        output: the solution
         output shape: (batchsize, x=s, y=s, c=1)
         """
         self.in_d_co_domain = in_d_co_domain # input channel
-        self.d_co_domain = d_co_domain 
+        self.d_co_domain = d_co_domain
         self.factor = factor
         self.padding = pad  # pad the domain if input is non-periodic
 
@@ -230,7 +232,6 @@ class Generator(nn.Module):
         x_fc0 = F.pad(x_fc0, [0,self.padding, 0,self.padding])
 
         D1,D2 = x_fc0.shape[-2],x_fc0.shape[-1]
-
 
         x1_c0 = self.conv0(x_fc0,int(D1*self.factor),int(D2*self.factor))
         x2_c0 = self.w0(x_fc0,int(D1*self.factor),int(D2*self.factor))
@@ -315,7 +316,7 @@ def kernel(in_chan=2, up_dim=32):
     return layers
 
 class Discriminator(nn.Module):
-    def __init__(self, in_d_co_domain, d_co_domain, half_modes, kernel_dim=16, pad = 0, factor = 3/4):
+    def __init__(self, in_d_co_domain, d_co_domain, half_modes, kernel_dim=16, pad=0, factor=3/4):
         super(Discriminator, self).__init__()
 
         """
@@ -327,11 +328,11 @@ class Discriminator(nn.Module):
 
         input: the solution of the coefficient function and locations (a(x, y), x, y)
         input shape: (batchsize, x=s, y=s, c=3)
-        output: the solution 
+        output: the solution
         output shape: (batchsize, x=s, y=s, c=1)
         """
         self.in_d_co_domain = in_d_co_domain # input channel
-        self.d_co_domain = d_co_domain 
+        self.d_co_domain = d_co_domain
         self.factor = factor
         self.padding = pad  # pad the domain if input is non-periodic
         self.kernel_dim = kernel_dim
@@ -1063,6 +1064,9 @@ _folder_name_key_tuples = [
     ('seed', 'sd'),
 ]
 
+def is_port_in_use(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('localhost', port)) == 0
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -1150,11 +1154,18 @@ if __name__ == '__main__':
                         help='number of process among all the processes')
     parser.add_argument('--master_address', type=str, default='127.0.0.1',
                         help='address for master')
-    parser.add_argument('--master_port', type=str, default='6020',
+    parser.add_argument('--master_port', type=str, default=None,
                         help='port for master')
-
     args = parser.parse_args()
 
+    # set port
+    if args.master_port is None:
+        free_port = 6020 + np.random.randint(100)
+        while is_port_in_use(free_port):
+            free_port += 1
+        args.master_port = str(free_port)
+
+    # folder_name
     _folder_name = []
     for k, abbr in _folder_name_key_tuples:
         if not hasattr(args, k) or getattr(args, k) is None:
@@ -1187,20 +1198,21 @@ if __name__ == '__main__':
     # init dataset
     _, _, _ = datasets.get_loaders_eval(args.dataset, args.data, False, batch_size=1, centered=args.centered if hasattr(args, 'centered') else False, num_workers=1)
 
-    # run
+    # init main function
     main = train if args.command_type == 'train' else 'test'
-    if global_size > 1:
+    # run
+    if args.global_size > 1:
         args.distributed = True
         processes = []
         for rank in range(args.num_process_per_node):
             args.local_rank = rank
             args.global_rank = global_rank = rank + args.node_rank * args.num_process_per_node
-            args.train_batch_size_per_gpu = args.train_batch_size // global_size
-            assert args.train_batch_size_per_gpu * global_size == args.train_batch_size
-            args.eval_batch_size_per_gpu = args.eval_batch_size // global_size
-            assert args.eval_batch_size_per_gpu * global_size == args.eval_batch_size
+            args.train_batch_size_per_gpu = args.train_batch_size // args.global_size
+            assert args.train_batch_size_per_gpu * args.global_size == args.train_batch_size
+            args.eval_batch_size_per_gpu = args.eval_batch_size // args.global_size
+            assert args.eval_batch_size_per_gpu * args.global_size == args.eval_batch_size
             print('Node rank %d, local proc %d, global proc %d' % (args.node_rank, rank, global_rank))
-            p = Process(target=utils.init_processes, args=(global_rank, global_size, main, args))
+            p = Process(target=utils.init_processes, args=(global_rank, args.global_size, main, args))
             p.start()
             processes.append(p)
 
@@ -1212,4 +1224,4 @@ if __name__ == '__main__':
         args.distributed = False
         args.train_batch_size_per_gpu = args.train_batch_size
         args.eval_batch_size_per_gpu = args.eval_batch_size
-        utils.init_processes(0, global_size, main, args)
+        utils.init_processes(0, args.global_size, main, args)

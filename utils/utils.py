@@ -85,7 +85,7 @@ def save_model(args,
                    'best_fid_score': best_fid_score,
                    'gen_sde_state_dict': gen_sde.state_dict(),
                    }
-        checkpoint_file = os.path.join(args.folder_path, checkpoint_name)
+        checkpoint_file = os.path.join(args.exp_path, checkpoint_name)
         torch.save(content, checkpoint_file)
     # switch back to original parameters
     if global_step > 0 and args.eval_use_ema and hasattr(gen_sde_optimizer, 'swap_parameters_with_ema'):
@@ -102,7 +102,7 @@ def save_checkpoint(args, global_step, best_fid_score, gen_sde, gen_sde_optimize
                    'gen_sde_optimizer': gen_sde_optimizer.state_dict(),
                    'gen_sde_scheduler': gen_sde_scheduler.state_dict() if gen_sde_scheduler is not None else None,
                    }
-        checkpoint_file = os.path.join(args.folder_path, checkpoint_name)
+        checkpoint_file = os.path.join(args.exp_path, checkpoint_name)
         torch.save(content, checkpoint_file)
     return
 
@@ -114,8 +114,11 @@ def load_checkpoint(checkpoint_file, gen_sde, gen_sde_optimizer, gen_sde_schedul
         gen_sde.load_state_dict(state_update_rule(checkpoint['gen_sde_state_dict']), strict=strict)
     else:
         gen_sde.load_state_dict(checkpoint['gen_sde_state_dict'], strict=strict)
-    gen_sde_optimizer.load_state_dict(checkpoint['gen_sde_optimizer'])
-    if 'gen_sde_scheduler' in checkpoint and checkpoint['gen_sde_scheduler'] is not None:
+    if gen_sde_optimizer is not None and 'gen_sde_optimizer' in checkpoint and checkpoint['gen_sde_optimizer'] is not None:
+        gen_sde_optimizer.load_state_dict(checkpoint['gen_sde_optimizer'])
+    else:
+        gen_sde_optimizer = None
+    if gen_sde_scheduler is not None and 'gen_sde_scheduler' in checkpoint and checkpoint['gen_sde_scheduler'] is not None:
         gen_sde_scheduler.load_state_dict(checkpoint['gen_sde_scheduler'])
     else:
         gen_sde_scheduler = None

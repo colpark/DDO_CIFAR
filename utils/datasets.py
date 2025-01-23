@@ -119,22 +119,24 @@ class OMNIGLOT(Dataset):
 
 
 class TensorDataset(Dataset):
-    def __init__(self, data, transform=None):
+    def __init__(self, data, target=None, transform=None):
         self.data = data
+        self.target = target
         self.transform = transform
 
     def __getitem__(self, index: int):
         sample = self.data[index]
+        label = self.target[index] if self.target is not None else torch.LongTensor([0])
         if self.transform is not None:
             sample = self.transform(sample)
-        return sample, 0
+        return sample, label
 
     def __len__(self):
         return self.data.shape[0]
 
 
 def get_datasets(dataset, root, augment=True, drop_last_train=True, shuffle_train=True,
-                     binarize_binary_datasets=True, centered=False, super_resolution=False, interpolation=InterpolationMode.BILINEAR, antialias=None):
+                     binarize_binary_datasets=False, centered=False, super_resolution=False, interpolation=InterpolationMode.BILINEAR, antialias=None):
     if dataset == 'cifar10':
         num_classes = 10
         image_size = 32
@@ -200,6 +202,40 @@ def get_datasets(dataset, root, augment=True, drop_last_train=True, shuffle_trai
             train_transform, valid_transform = _data_transforms_vorticity(image_size)
         train_data = TensorDataset(vor, transform=train_transform)
         valid_data = TensorDataset(vor, transform=valid_transform)
+    elif dataset.startswith('darcy'):
+        image_size = int(dataset.split('_')[1])
+        num_classes = None
+        num_channels = 1
+        train_data = torch.load(os.path.join(root, 'darcy', f'darcy_lognormal_data_u{image_size}x{image_size}_a{image_size}x{image_size}.pt'))
+        # down sample initial condition
+        down_samp_fac = image_size // 8
+        train_data['u'] = train_data['u'][:,::down_samp_fac,::down_samp_fac].detach().clone() # to 8x8
+        # train_data['u'] = downsampling_fourier(train_data['u'][:,None], scaling_factor=down_samp_fac)[:,0].detach().clone() # to 8x8
+        # add noise to initial condition
+        noise_var = torch.load(os.path.join(root, 'darcy', f'darcy_lognormal_obsvar_noise.pt'))
+        train_data['u'] =  train_data['u'] + noise_var # add noise
+        # compute mean and variance
+        mean_a = torch.mean(train_data['a'], 0, keepdim=True) # data (terminal)
+        std_a = torch.std(train_data['a']-mean_a, 0, keepdim=True)
+        mean_u = torch.mean(train_data['u'], 0, keepdim=True) # initial condition
+        std_u = torch.std(train_data['u']-mean_u, 0, keepdim=True)
+        train_data_normalized = {
+                'a': (train_data['a']-mean_a)/std_a, # data (terminal)
+                'u': (train_data['u']-mean_u)/std_u, # initial condition
+                }
+        train_data = TensorDataset(train_data_normalized['a'][:,None], train_data_normalized['u'][:,None])
+        # train_data = TensorDataset(train_data_normalized['a'][:,None][:-1000], train_data_normalized['u'][:,None][:-1000])
+        # valid_data = TensorDataset(train_data_normalized['a'][:,None][-1000:], train_data_normalized['u'][:,None][-1000:])
+        test_data = torch.load(os.path.join(root, 'darcy', f'darcy_lognormal_posterior_{image_size}x{image_size}.pt'))
+        # compute mean and variance
+        mean_p = torch.mean(test_data['posterior'], 0, keepdim=True) # data (terminal)
+        std_p = torch.std(test_data['posterior']-mean_p, 0, keepdim=True)
+        test_data_normalized = {
+                # 'posterior': (test_data['posterior']-mean_p)/std_p,
+                'posterior': (test_data['posterior']-mean_a)/std_a,
+                'u_obs': (test_data['u_obs'][None]-mean_u)/std_u,
+                }
+        valid_data = TensorDataset(test_data_normalized['posterior'][:,None], test_data_normalized['u_obs'][:,None].repeat(test_data['posterior'].shape[0], 1, 1, 1))
     elif dataset.startswith('celeba'):
         if dataset == 'celeba_64':
             image_size = 64
@@ -319,7 +355,7 @@ def get_datasets(dataset, root, augment=True, drop_last_train=True, shuffle_trai
     return train_data, valid_data, num_classes
 
 def get_loaders_eval(dataset, root, distributed, batch_size, augment=True, drop_last_train=True, shuffle_train=True,
-                     binarize_binary_datasets=True, centered=False, super_resolution=False, interpolation=InterpolationMode.BILINEAR, antialias=None, num_workers=8):
+                     binarize_binary_datasets=False, centered=False, super_resolution=False, interpolation=InterpolationMode.BILINEAR, antialias=None, num_workers=8):
     # get datasets
     train_data, valid_data, num_classes = get_datasets(dataset, root, augment, drop_last_train, shuffle_train, binarize_binary_datasets, centered, super_resolution, interpolation, antialias)
 

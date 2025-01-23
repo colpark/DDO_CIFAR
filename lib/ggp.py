@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 
 from lib.dct import LinearDCT
+from .models.fourier import SpectralCutoff2d
 
 
 # def exponential_function(img_height, dim, exponent=2.0, length_scale=1.0, sigma=1.0, EPS=1e-5, device=None, **kwargs):
@@ -117,8 +118,9 @@ class RegularGridGaussianProcess(nn.Module):
         self.dim = dim
         self.pos_range = pos_range
         self.gp_type = self.kernel_type = gp_type
-        self.modes = modes
         self.ch = ch
+        self.modes = modes
+        self.cutoff = SpectralCutoff2d(modes, modes) if modes is not None else None
 
         if self.kernel_type == 'independent':
             self.dct = None
@@ -177,23 +179,26 @@ class RegularGridGaussianProcess(nn.Module):
         # apply kernel
         out_noise_freq = exp_kernel_freq * self.dct(white_noise)
 
-        # expand
-        if self.modes is not None and self.modes < img_height:
-            if self.dim == 1:
-                out_noise_freq[:,:,self.modes:] = 0
-            elif self.dim == 2:
-                out_noise_freq[:,:,self.modes:] = 0
-                out_noise_freq[:,:,:,self.modes:] = 0
-            elif self.dim == 3:
-                out_noise_freq[:,:,self.modes:] = 0
-                out_noise_freq[:,:,:,self.modes:] = 0
-                out_noise_freq[:,:,:,:,self.modes:] = 0
+        # # expand
+        # if self.modes is not None and self.modes < img_height:
+        #     if self.dim == 1:
+        #         out_noise_freq[:,:,self.modes:] = 0
+        #     elif self.dim == 2:
+        #         out_noise_freq[:,:,self.modes:] = 0
+        #         out_noise_freq[:,:,:,self.modes:] = 0
+        #     elif self.dim == 3:
+        #         out_noise_freq[:,:,self.modes:] = 0
+        #         out_noise_freq[:,:,:,self.modes:] = 0
+        #         out_noise_freq[:,:,:,:,self.modes:] = 0
 
         # idct
         out_noise = self.idct(out_noise_freq)
 
         # return
-        return out_noise
+        if self.cutoff is not None:
+            return self.cutoff(out_noise)
+        else:
+            return out_noise
 
     def sample_indep_kernel(self, batch_size, img_height, ch, **kwargs):
         device = self.T.device

@@ -1,4 +1,5 @@
 import os
+import tqdm
 import functools
 import time
 import argparse
@@ -13,7 +14,7 @@ from torch.multiprocessing import Process
 from utils import utils
 from utils import datasets
 from utils.ema import EMA
-from utils.utils import save_checkpoint, load_checkpoint
+from utils.utils import save_checkpoint, load_checkpoint, count_parameters_in_M
 from utils.visualize import get_grid_image
 from utils.evaluate import compute_feature_stats_for_dataset, compute_feature_stats_for_generator
 from utils.evaluate import calculate_frechet_distance, calculate_precision_recall
@@ -326,7 +327,7 @@ def init_model(args, resume:bool=None):
         gen_sde_scheduler = None
 
     # resume
-    checkpoint_file = os.path.join(args.folder_path, args.checkpoint_file)
+    checkpoint_file = os.path.join(args.exp_path, args.checkpoint_file)
     resume = args.resume if resume is None else resume
     if resume and os.path.exists(checkpoint_file):
         print('loading the model.')
@@ -351,7 +352,7 @@ def save_model(args, global_step, gen_sde, best_fid_score, checkpoint_name='chec
                    'best_fid_score': best_fid_score,
                    'gen_sde_state_dict': gen_sde.state_dict(),
                    }
-        checkpoint_file = os.path.join(args.folder_path, checkpoint_name)
+        checkpoint_file = os.path.join(args.exp_path, checkpoint_name)
         torch.save(content, checkpoint_file)
     return
 
@@ -431,7 +432,7 @@ def evaluate(args, gen_sde, img_height, count, eval_metric='fid', upsample=False
         num_gpus=args.global_size,
         rank=args.global_rank,
         cache=args.eval_cache if hasattr(args, 'eval_cache') else False,
-        cache_path=args.folder_path,
+        cache_path=args.exp_path,
         #verbose=True,
         G_kwargs=dict(
            count=count,
@@ -504,8 +505,8 @@ def evaluate(args, gen_sde, img_height, count, eval_metric='fid', upsample=False
     return fid, precision, recall
 
 def train(args):
-    logging, writer = utils.common_init(args.global_rank, args.seed, args.folder_path)
-    logging.info(f'folder path: {args.folder_path}')
+    logging, writer = utils.common_init(args.global_rank, args.seed, args.exp_path)
+    logging.info(f'exp path: {args.exp_path}')
     logging.info(str(args))
 
     # dataset
@@ -527,6 +528,7 @@ def train(args):
      best_fid_score,
      ) = init_model(args)
     logging.info(gen_sde)
+    logging.info(f'# params: {count_parameters_in_M(gen_sde):.2f}M')
 
     # upsample
     if args.upsample and args.train_img_height < args.upsample_resolution:
@@ -645,19 +647,19 @@ def train(args):
                     gen_sde_optimizer.swap_parameters_with_ema(store_params_in_ema=True)
 
                 if args.global_rank == 0:
-                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=32, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
+                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=args.train_img_height, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
                     nrow = int(args.vis_batch_size**0.5)
-                    writer.add_image(f'train/samples/32/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
+                    writer.add_image(f'train/samples/{args.train_img_height}/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
                     writer.flush()
 
-                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=64, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
+                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=args.train_img_height*2, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
                     nrow = int(args.vis_batch_size**0.5)
-                    writer.add_image(f'train/samples/64/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
+                    writer.add_image(f'train/samples/{args.train_img_height*2}/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
                     writer.flush()
 
-                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=128, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
+                    sample = sample_image(gen_sde, batch_size=args.vis_batch_size, img_height=args.train_img_height*4, sampler=args.sampler, num_steps=args.num_steps, lmbd=args.eval_lmbd, transform=args.reverse, clip=False)
                     nrow = int(args.vis_batch_size**0.5)
-                    writer.add_image(f'train/samples/128/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
+                    writer.add_image(f'train/samples/{args.train_img_height*4}/{args.sampler}-{args.num_steps}', get_grid_image(sample[:nrow**2].cpu(), nrow=nrow, pad_value=0, padding=2, to_numpy=False), count)
                     writer.flush()
 
                     logging.info('Visualized samples at iter {:d}'.format(count))
@@ -720,15 +722,16 @@ def train(args):
 
 
 def test(args):
-    logging, writer = utils.common_init(args.global_rank, args.seed, args.folder_path, suffix='test')
-    logging.info(f'folder path: {args.folder_path}')
+    logging, writer = utils.common_init(args.global_rank, args.seed, args.exp_path, suffix='test')
+    logging.info(f'exp path: {args.exp_path}')
     logging.info(str(args))
 
     # load model
-    if args.model is None:
-        checkpoint_file = args.checkpoint_file
-    else:
-        checkpoint_file = os.path.join(args.folder_path, args.checkpoint_file)
+    # if args.model is None:
+    #     checkpoint_file = args.checkpoint_file
+    # else:
+    #     checkpoint_file = os.path.join(args.exp_path, args.checkpoint_file)
+    checkpoint_file = os.path.join(args.exp_path, args.checkpoint_file)
     if os.path.basename(checkpoint_file) in {'checkpoint_init.pt', 'checkpoint_fid.pt'}:
         gen_sde, count, best_fid_score, train_args = load_model(checkpoint_file)
         train_args.num_proc_node = args.num_proc_node
@@ -833,8 +836,8 @@ def test(args):
     return fid, precision, recall
 
 def save_model_after_load_checkpoint(args):
-    logging, writer = utils.common_init(args.global_rank, args.seed, args.folder_path, suffix='save')
-    logging.info(f'folder path: {args.folder_path}')
+    logging, writer = utils.common_init(args.global_rank, args.seed, args.exp_path, suffix='save')
+    logging.info(f'folder path: {args.exp_path}')
     logging.info(str(args))
 
     # init model
@@ -853,7 +856,7 @@ def save_model_after_load_checkpoint(args):
     # save best fid model
     if args.global_rank == 0:
         save_model(args, count, gen_sde, best_fid_score, checkpoint_name=f'checkpoint_iter{count}.pt')
-    logging.info(f'folder_path: {args.folder_path}')
+    logging.info(f'exp_path: {args.exp_path}')
     logging.info(f'saved the model at iter {count}')
 
     # switch back to original parameters
@@ -922,7 +925,8 @@ def get_args(*args, **kwargs):
     parser.add_argument("--command_type", type=str, default='train', choices=['train', 'test', 'save'])
 
     # i/o
-    parser.add_argument('--exp_path', type=str, default='results')
+    parser.add_argument('--exp_root', type=str, default=None)
+    parser.add_argument('--exp_path', type=str, default=None)
     parser.add_argument('--print_every', type=int, default=1000)
     parser.add_argument('--save_every', type=int, default=5000)
     parser.add_argument('--ckpt_every', type=int, default=100000)
@@ -1042,9 +1046,19 @@ def get_args(*args, **kwargs):
                         help='address for master')
     parser.add_argument('--master_port', type=str, default=None,
                         help='port for master')
+    args = parser.parse_args(*args, **kwargs)
 
-    return parser.parse_args(*args, **kwargs)
+    # set port
+    if args.master_port is None:
+        free_port = 6020 + np.random.randint(100)
+        while is_port_in_use(free_port):
+            free_port += 1
+        args.master_port = str(free_port)
 
+    # init
+    args.global_size = args.num_proc_node * args.num_process_per_node
+
+    return args
 
 def is_port_in_use(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -1054,41 +1068,34 @@ def is_port_in_use(port: int) -> bool:
 if __name__ == '__main__':
     # get args
     args = get_args()
-
-    # set port
-    if args.master_port is None:
-        free_port = 6020 + np.random.randint(100)
-        while is_port_in_use(free_port):
-            free_port += 1
-        args.master_port = str(free_port)
+    if args.exp_root is None and args.exp_path is None:
+        raise ValueError('Either args.exp_root or args.exp_path needs to be specified')
 
     # folder_name
-    _folder_name = []
-    for k, abbr in _folder_name_key_tuples:
-        if not hasattr(args, k) or getattr(args, k) is None:
-            continue
-        if k.startswith('upsample_') and args.upsample is False:
-            continue
-        if k == "use_pos" and args.use_pos is False:
-            continue
-        if k in ['min_scale', 'sigma_blur_min', 'sigma_blur_max'] and args.disp_method is None:
-            continue
-        if k in ['ch_mult']:
-            _folder_name += [abbr+''.join([str(i) for i in getattr(args, k)])]
-        elif k == "use_pos" and args.use_pos:
-            _folder_name += [abbr]
-        else:
-            _folder_name += [abbr+str(getattr(args, k)).lower()]
-    folder_name = '-'.join(_folder_name)
-    args.folder_path = os.path.join(args.exp_path, args.dataset, folder_name)
+    if args.exp_path is None:
+        _folder_name = []
+        for k, abbr in _folder_name_key_tuples:
+            if not hasattr(args, k) or getattr(args, k) is None:
+                continue
+            if k.startswith('upsample_') and args.upsample is False:
+                continue
+            if k == "use_pos" and args.use_pos is False:
+                continue
+            if k in ['min_scale', 'sigma_blur_min', 'sigma_blur_max'] and args.disp_method is None:
+                continue
+            if k in ['ch_mult']:
+                _folder_name += [abbr+''.join([str(i) for i in getattr(args, k)])]
+            elif k == "use_pos" and args.use_pos:
+                _folder_name += [abbr]
+            else:
+                _folder_name += [abbr+str(getattr(args, k)).lower()]
+        folder_name = '-'.join(_folder_name)
+        args.exp_path = os.path.join(args.exp_root, args.dataset, folder_name)
 
-    if not os.path.isdir(args.folder_path):
-        os.makedirs(args.folder_path)
-    with open(os.path.join(args.folder_path, 'args.txt'), 'w') as out:
+    if not os.path.isdir(args.exp_path):
+        os.makedirs(args.exp_path)
+    with open(os.path.join(args.exp_path, 'args.txt'), 'w') as out:
         out.write(json.dumps(args.__dict__, indent=4))
-
-    # init
-    args.global_size = global_size = args.num_proc_node * args.num_process_per_node
 
     # multiprocessing
     try:
@@ -1110,18 +1117,18 @@ if __name__ == '__main__':
         raise ValueError
 
     # run
-    if global_size > 1:
+    if args.global_size > 1:
         args.distributed = True
         processes = []
         for rank in range(args.num_process_per_node):
             args.local_rank = rank
             args.global_rank = global_rank = rank + args.node_rank * args.num_process_per_node
-            args.train_batch_size_per_gpu = args.train_batch_size // global_size
-            assert args.train_batch_size_per_gpu * global_size == args.train_batch_size
-            args.eval_batch_size_per_gpu = args.eval_batch_size // global_size
-            assert args.eval_batch_size_per_gpu * global_size == args.eval_batch_size
+            args.train_batch_size_per_gpu = args.train_batch_size // args.global_size
+            assert args.train_batch_size_per_gpu * args.global_size == args.train_batch_size
+            args.eval_batch_size_per_gpu = args.eval_batch_size // args.global_size
+            assert args.eval_batch_size_per_gpu * args.global_size == args.eval_batch_size
             print('Node rank %d, local proc %d, global proc %d' % (args.node_rank, rank, global_rank))
-            p = Process(target=utils.init_processes, args=(global_rank, global_size, main, args))
+            p = Process(target=utils.init_processes, args=(global_rank, args.global_size, main, args))
             p.start()
             processes.append(p)
 
@@ -1133,4 +1140,4 @@ if __name__ == '__main__':
         args.distributed = False
         args.train_batch_size_per_gpu = args.train_batch_size
         args.eval_batch_size_per_gpu = args.eval_batch_size
-        utils.init_processes(0, global_size, main, args)
+        utils.init_processes(0, args.global_size, main, args)

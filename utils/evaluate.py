@@ -217,6 +217,11 @@ def compute_feature_stats_for_dataset(
     for images, _labels in tqdm.tqdm(torch.utils.data.DataLoader(dataset=dataset, sampler=item_subset, batch_size=batch_size, **data_loader_kwargs),
                                      disable=False if opts.rank == 0 else True,
                                      ncols=80):
+
+        # device
+        images = images.to(opts.device)
+
+        # transform
         if transform is not None:
             images = transform(images)
         if resize is not None:
@@ -224,7 +229,9 @@ def compute_feature_stats_for_dataset(
         if images.shape[1] == 1:
             images = images.repeat([1, 3, 1, 1])
         images = (images*255).clamp(0, 255).to(torch.uint8)
-        features = detector(images.to(opts.device), **detector_kwargs) # detector will resize image internally
+
+        # forward
+        features = detector(images, **detector_kwargs) # detector will resize image internally
         stats.append_torch(features, num_gpus=opts.num_gpus, rank=opts.rank)
         progress.update(stats.num_items)
 
@@ -335,7 +342,7 @@ def compute_feature_stats_for_generator(
             resize = TF.Compose([_type_cast, partial(F.interpolate, size=(299, 299), mode=interpolation, align_corners=False, antialias=antialias)])
         else:
             raise NotImplementedError
-        dl = generator_wrapper(dl, transform=resize)
+        # dl = generator_wrapper(dl, transform=resize)
     else:
         raise ValueError
 
@@ -348,14 +355,16 @@ def compute_feature_stats_for_generator(
         if isinstance(batch, list) or isinstance(batch, tuple):
             batch = batch[0]
 
+        # device
         batch = batch.to(opts.device)
 
+        # transform
         if transform is not None:
             batch = transform(batch)
-
+        if resize is not None:
+            batch = resize(batch)
         if batch.shape[1] == 1:  # if image is gray scale
             batch = batch.repeat(1, 3, 1, 1)
-
         batch = (batch*255).clamp(0, 255).to(torch.uint8)
 
         # forward

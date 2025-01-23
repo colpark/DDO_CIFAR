@@ -149,6 +149,7 @@ class SpectralResidualBlock2d(nn.Module):
                  norm=None,
                  skip='identity',
                  use_pointwise_op=False,
+                 use_separable=False,
                  cond_type="improved",
                  **kwargs,
                  ):
@@ -169,11 +170,13 @@ class SpectralResidualBlock2d(nn.Module):
         self.conv1 = SpectralConv2d(
                 in_channels, out_channels, modes_height, modes_width,
                 skip=use_pointwise_op,
+                separable=use_separable,
                 )
         self.norm2 = norm(out_channels, modes_height=modes_height) if norm is not None else nn.Identity()
         self.conv2 = SpectralConv2d(
                 out_channels, out_channels, modes_height, modes_width,
                 skip=use_pointwise_op,
+                separable=use_separable,
                 )
 
         if in_channels != out_channels:

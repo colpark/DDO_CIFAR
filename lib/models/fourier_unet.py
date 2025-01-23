@@ -74,6 +74,7 @@ class SpectralDownsample2d(nn.Module):
         modes_height=None,
         modes_width=None,
         use_pointwise_op=False,
+        use_separable=False,
     ):
         super().__init__()
         self.down = Downsample2d(filter_size=filter_size, use_radial=use_radial)#, use_fft=use_fft)
@@ -84,6 +85,7 @@ class SpectralDownsample2d(nn.Module):
                 modes_height=modes_height,
                 modes_width=modes_width,
                 skip=use_pointwise_op,
+                separable=use_separable,
                 )
 
     def forward(self, x):
@@ -134,6 +136,7 @@ class SpectralUpsample2d(nn.Module):
         modes_height=None,
         modes_width=None,
         use_pointwise_op=False,
+        use_separable=False,
     ):
         super().__init__()
         self.up = Upsample2d(filter_size=filter_size, use_radial=use_radial)#, use_fft=use_fft)
@@ -144,6 +147,7 @@ class SpectralUpsample2d(nn.Module):
                 modes_height=modes_height,
                 modes_width=modes_width,
                 skip=use_pointwise_op,
+                separable=use_separable,
                 )
 
     def forward(self, x):
@@ -172,11 +176,13 @@ class FNOUNet(nn.Module):
                  mlp={'expansion': 1.0, 'dropout': 0},
                  resamp_with_conv=True,
                  use_pointwise_op=False,
+                 use_separable=False,
                  use_time_embedding=True,
                  use_pos=False,
                  # use_positional_embedding=False,
                  base_resolution=None,
                  pos_dim=2,
+                 cond_dim=0,
                  **kwargs,
                  ):
         super().__init__()
@@ -200,14 +206,14 @@ class FNOUNet(nn.Module):
 
         if pos_dim == 1:
             conv_init = nn.Conv1d #conv1d
-            PositionalEmbedding = PositionalEmbedding1d
+            # PositionalEmbedding = PositionalEmbedding1d
             SpectralResidualBlock = SpectralResidualBlock1d
             # SelfAttention = SelfAttention1d
             SpectralDownsample = SpectralDownsample1d
             SpectralUpsample = SpectralUpsample1d
         elif pos_dim == 2:
             conv_init = nn.Conv2d #conv2d
-            PositionalEmbedding = PositionalEmbedding2d
+            # PositionalEmbedding = PositionalEmbedding2d
             SpectralResidualBlock = SpectralResidualBlock2d
             # SelfAttention = SelfAttention2d
             SpectralDownsample = SpectralDownsample2d
@@ -219,7 +225,7 @@ class FNOUNet(nn.Module):
         self.num_resolutions = num_resolutions = len(ch_mult)
         temb_ch = ch * 4 if self.use_time_embedding else 0
         # pemb_ch = ch * 4 if self.use_positional_embedding else 0
-        pos_ch = pos_dim if self.use_pos else 0
+        self.pos_ch = pos_ch = cond_dim + pos_dim if self.use_pos else cond_dim + 0
 
         # Timestep embedding
         if self.use_time_embedding:
@@ -267,6 +273,7 @@ class FNOUNet(nn.Module):
                         norm=norm,
                         skip=skip,
                         use_pointwise_op=use_pointwise_op,
+                        use_separable=use_separable,
                     )
                 if in_ht in attn_resolutions:
                     raise NotImplementedError
@@ -283,6 +290,7 @@ class FNOUNet(nn.Module):
                         modes_width=min(in_ht, modes_height),
                         with_conv=resamp_with_conv,
                         use_pointwise_op=use_pointwise_op,
+                        use_separable=use_separable,
                         # filter_size=min(in_ht, 8), #min(in_ht//2, 8),
                         # use_fft=True, #False if in_ht >= 8 else True,
                     )
@@ -308,6 +316,7 @@ class FNOUNet(nn.Module):
                 norm=norm,
                 skip=skip,
                 use_pointwise_op=use_pointwise_op,
+                use_separable=use_separable,
             )]
         if len(attn_resolutions) > 0:
             raise NotImplementedError
@@ -326,6 +335,7 @@ class FNOUNet(nn.Module):
                 norm=norm,
                 skip=skip,
                 use_pointwise_op=use_pointwise_op,
+                use_separable=use_separable,
             )]
         self.mid_modules = nn.ModuleList(mid_modules)
 
@@ -351,6 +361,7 @@ class FNOUNet(nn.Module):
                         norm=norm,
                         skip=skip,
                         use_pointwise_op=use_pointwise_op,
+                        use_separable=use_separable,
                     )
                 if in_ht in attn_resolutions:
                     raise NotImplementedError
@@ -365,6 +376,7 @@ class FNOUNet(nn.Module):
                         modes_width=min(in_ht, modes_height),
                         with_conv=resamp_with_conv,
                         use_pointwise_op=use_pointwise_op,
+                        use_separable=use_separable,
                         # filter_size=min(in_ht, 8), #min(in_ht//2, 8),
                         # use_fft=True, #False if in_ht >= 8 else True,
                     )
@@ -404,7 +416,8 @@ class FNOUNet(nn.Module):
         #     assert x.shape[-1] == v.shape[-1]# and x.shape[-2] == v.shape[-2]
         #     pemb = self.pemb_net(v)
         #     h = torch.cat([self.lifting(x), self.act(pemb)], dim=1)
-        if self.use_pos:
+        # if self.use_pos:
+        if self.pos_ch > 0:
             h = self.lifting(torch.cat([x, v], dim=1))
         else:
             h = self.lifting(x)

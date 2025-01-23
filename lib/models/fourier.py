@@ -93,6 +93,7 @@ class SpectralConv2d(nn.Module):
                  fft_norm='forward', #None,
                  bias=True,
                  skip=False,
+                 separable=True, #False,
                  **kwargs):
         super().__init__()
         self.in_channels = in_channels
@@ -102,11 +103,22 @@ class SpectralConv2d(nn.Module):
         assert modes_height == modes_width, 'current version only supports modes_height == modes_width'
         self.half_modes_width = modes_width//2+1
         self.fft_norm = fft_norm
+        self.separable = separable
 
-        self._weight = Parameter(torch.view_as_real(torch.complex(
-                torch.zeros(out_channels, in_channels, modes_height, self.half_modes_width),
-                torch.zeros(out_channels, in_channels, modes_height, self.half_modes_width),
-            )))
+        if self.separable:
+            self._weight1 = Parameter(torch.view_as_real(torch.complex(
+                    torch.zeros(out_channels, in_channels, modes_height, 1),
+                    torch.zeros(out_channels, in_channels, modes_height, 1),
+                )))
+            self._weight2 = Parameter(torch.view_as_real(torch.complex(
+                    torch.zeros(out_channels, in_channels, 1, self.half_modes_width),
+                    torch.zeros(out_channels, in_channels, 1, self.half_modes_width),
+                )))
+        else:
+            self._weight = Parameter(torch.view_as_real(torch.complex(
+                    torch.zeros(out_channels, in_channels, modes_height, self.half_modes_width),
+                    torch.zeros(out_channels, in_channels, modes_height, self.half_modes_width),
+                )))
         if bias:
             self.bias = Parameter(torch.empty(1, out_channels, 1, 1))
         else:
@@ -120,10 +132,17 @@ class SpectralConv2d(nn.Module):
 
     @property
     def weight(self):
-        return torch.view_as_complex(self._weight)
+        if self.separable:
+            return torch.view_as_complex(self._weight1) * torch.view_as_complex(self._weight2)
+        else:
+            return torch.view_as_complex(self._weight)
 
     def reset_parameters(self) -> None:
-        self._weight.data.normal_(std=np.sqrt(2/(self.modes_height*self.modes_width)))
+        if self.separable:
+            self._weight1.data.normal_(std=np.sqrt(2/(self.modes_height*self.modes_width)))
+            self._weight2.data.normal_(std=np.sqrt(2/(self.modes_height*self.modes_width)))
+        else:
+            self._weight.data.normal_(std=np.sqrt(2/(self.modes_height*self.modes_width)))
         if self.bias is not None:
             torch.nn.init.zeros_(self.bias)
 
@@ -167,6 +186,7 @@ class SpectralConv2d(nn.Module):
              f'modes_height={self.modes_height}',
              f'modes_width={self.modes_width}',
              f'fft_norm={self.fft_norm}',
+             f'separable={self.separable}',
              ]
         if self.bias is None:
             s += ['bias=False']
@@ -291,3 +311,5 @@ class SpectralGroupNorm(nn.Module):
                 f'(affine): {self.affine}\n'
                 f'(cutoff): {self.cutoff}'
                 )
+
+
