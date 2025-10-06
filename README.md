@@ -56,30 +56,50 @@ python main.py --command_type=test \
 
 ### Sparse CIFAR-10 Image Reconstruction
 
-Reconstruct full images from 10% observed pixels (randomly sampled).
+Reconstruct full images from 10% observed pixels using conditional DDO.
 
-**Interactive Demo:**
+**Quick Start:**
+```bash
+# Train the model
+bash train_sparse_recon.sh ./experiments/sparse_recon ./data
+
+# Or use the interactive notebook
+jupyter notebook notebooks/sparse_reconstruction_train.ipynb
+```
+
+**Documentation**: See [SPARSE_RECONSTRUCTION.md](SPARSE_RECONSTRUCTION.md) for complete guide
+
+**Key Features:**
+- **Input**: 10% randomly observed pixels
+- **Output**: Full 32×32 RGB reconstructed image
+- **Model**: Conditional DDO with sparse context encoding
+- **Training**: ~200K iterations, ~24-48 hours
+- **Expected PSNR**: 20-25 dB with 10% observations
+
+**Quick Demo** (visualization only):
 ```bash
 jupyter notebook notebooks/cifar10_sparse_reconstruction.ipynb
 ```
 
-This notebook demonstrates:
-- Loading sparse CIFAR-10 dataset (10% context pixels, 10% query pixels)
-- Visualizing different sampling patterns (random, grid, center)
-- Data format for conditional reconstruction training
+**Architecture**:
+```
+Sparse Observations (10%) → Context Encoder → Dense Features
+                                                     ↓
+    Noisy Image ────────────────────────→ [Concat] → FNO-UNet → Denoised Image
+```
 
-**Key Features:**
-- **Context**: 10% randomly observed pixels (input)
-- **Query**: 10% additional pixels for training supervision
-- **Task**: Predict all unobserved pixels given context
-- **Training**: Different random masks each iteration
-- **Evaluation**: Fixed masks for consistent comparison
+**Files**:
+- `main_sparse_reconstruction.py` - Training script with conditional model
+- `train_sparse_recon.sh` - Shell script for easy training
+- `utils/sparse_datasets.py` - Dataset wrapper for sparse sampling
+- `notebooks/sparse_reconstruction_train.ipynb` - Interactive training
+- `notebooks/cifar10_sparse_reconstruction.ipynb` - Data visualization demo
 
 **Usage Example:**
 ```python
 from utils.sparse_datasets import SparseImageDatasetWrapper
 
-# Wrap any image dataset
+# Create sparse dataset
 sparse_dataset = SparseImageDatasetWrapper(
     dataset=cifar10_dataset,
     context_ratio=0.1,   # 10% observed
@@ -87,11 +107,8 @@ sparse_dataset = SparseImageDatasetWrapper(
     mode='train'
 )
 
-# Each sample contains:
-# - context_coords: (num_context, 2) - positions of observed pixels
-# - context_values: (num_context, 3) - RGB values at observed positions
-# - query_coords: (num_query, 2) - positions to predict
-# - query_values: (num_query, 3) - ground truth for training
+# Train conditional DDO
+python main_sparse_reconstruction.py --context_ratio=0.1
 ```
 
 ## Experiments on MNIST-SDF Dataset
