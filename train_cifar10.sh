@@ -12,7 +12,7 @@ python main.py --command_type=train \
   --exp_path=${EXP_PATH} \
   --seed=1 --print_every=1000 --save_every=5000 --ckpt_every=100000 --eval_every=50000 --vis_every=10000 --resume \
   --data=${DATA_PATH} --dataset=cifar10 --train_img_height=32 --input_dim=3 --coord_dim=2 \
-  --model=fnounet2d --use_pos --modes=32 --ch=128 --ch_mult=1,2,2,2 --num_res_blocks=4 --dropout=0.1 --norm=group_norm --use_pointwise_op \
+  --model=fnounet2d --use_pos --modes=16 --ch=64 --ch_mult=1,2,2 --num_res_blocks=2 --dropout=0.1 --norm=group_norm --use_pointwise_op \
   --ns_method=vp_cosine --timestep_sampler=low_discrepancy \
   --disp_method=sine --sigma_blur_min=0.05 --sigma_blur_max=0.25 \
   --gp_type=exponential --gp_exponent=2.0 --gp_length_scale=0.05 --gp_sigma=1.0 \
