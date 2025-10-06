@@ -8,6 +8,50 @@ by Jae Hyun Lim\*, Nikola B Kovachki\*, Ricardo Baptista\*, Christopher Beckham,
 
 [[arXiv](https://arxiv.org/abs/2302.07400)]
 
+## Experiments on CIFAR-10 Dataset
+CIFAR-10 experiments use DDO directly in pixel space (no SDF transform needed).
+
+### Training
+```bash
+bash train_cifar10.sh ${EXP_PATH} ${DATA_PATH} ${FID_PATH}
+```
+
+Or use the Python command directly:
+```
+python main.py --command_type=train \
+  --exp_path=${EXP_PATH} \
+  --seed=1 --print_every=1000 --save_every=5000 --ckpt_every=100000 --eval_every=50000 --vis_every=10000 --resume \
+  --data=${DATA_PATH} --dataset=cifar10 --train_img_height=32 --input_dim=3 --coord_dim=2 \
+  --model=fnounet2d --use_pos --modes=32 --ch=128 --ch_mult=1,2,2,2 --num_res_blocks=4 --dropout=0.1 --norm=group_norm --use_pointwise_op \
+  --ns_method=vp_cosine --timestep_sampler=low_discrepancy \
+  --disp_method=sine --sigma_blur_min=0.05 --sigma_blur_max=0.25 \
+  --gp_type=exponential --gp_exponent=2.0 --gp_length_scale=0.05 --gp_sigma=1.0 \
+  --num_steps=250 --sampler=denoise --s_min=0.0001 \
+  --train_batch_size=128 --lr=0.0002 --weight_decay=0.0 --num_iterations=500000 \
+  --eval_use_ema --ema_decay=0.999 --eval_img_height=32 --eval_batch_size=256 --eval_num_samples=50000 --eval_resize_mode=tensor --eval_interpolation=bilinear --fid_dir=${FID_PATH} \
+  --vis_batch_size=64
+```
+
+### Sample generation
+Run the notebook:
+- `notebooks/cifar10_sample_ddo.ipynb`
+
+### Evaluation
+```bash
+bash eval_cifar10.sh ${EXP_PATH} ${DATA_PATH} ${FID_PATH}
+```
+
+Or use the Python command:
+```
+python main.py --command_type=test \
+  --exp_path=${EXP_PATH} \
+  --data=${DATA_PATH} --dataset=cifar10 --train_img_height=32 --input_dim=3 --coord_dim=2 \
+  --num_steps=250 --sampler=denoise --s_min=0.0001 \
+  --eval_use_ema --ema_decay=0.999 --eval_img_height=32 --eval_batch_size=512 --eval_num_samples=50000 --eval_resize_mode=tensor --eval_interpolation=bilinear --fid_dir=${FID_PATH} \
+  --checkpoint_file=checkpoint_fid.pt \
+  --eval_fid
+```
+
 ## Experiments on MNIST-SDF Dataset
 Here's example command lines for training DDO and GANO models
 
