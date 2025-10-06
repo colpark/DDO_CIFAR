@@ -701,7 +701,7 @@ class DenoisingDiffusion(nn.Module):
     def pred(self, y, s, v=None, level=None, **kwargs):
         if self.model_type == 'epsilon':
             alpha, sigma = self.forward_diffusion.get_alpha_sigma(s, img_dim=y.shape[-1])
-            epsilon = self.model(x=y, temp=s.view(-1), v=v, level=level)
+            epsilon = self.model(x=y, temp=s.view(-1), v=v, level=level, **kwargs)
             return (y - sigma * epsilon) / alpha
         else:
             raise ValueError
@@ -854,9 +854,9 @@ class DenoisingDiffusion(nn.Module):
         if use_clip is None:
             use_clip = self.use_clip
         if use_clip:
-            hat_eps = self._clipped_epsilon(y=z_t, s=t, v=v)
+            hat_eps = self._clipped_epsilon(y=z_t, s=t, v=v, **kwargs)
         else:
-            hat_eps = self.epsilon(y=z_t, s=t, v=v)
+            hat_eps = self.epsilon(y=z_t, s=t, v=v, **kwargs)
 
         # Compute terms.
         u_t = self.dct(z_t)
@@ -922,10 +922,10 @@ def diffuse(model, num_steps, x_0, v=None, lmbd=0., s_min=0., sampler='denoise',
             t = ts[i] * ONES
 
             if return_mean and i == n_ts-1:
-                _, _, mu_t, _ = func_step(x_t, t, v=v, num_steps=num_steps, dt=dt, lmbd=lmbd, return_all=True, use_clip=use_clip)
+                _, _, mu_t, _ = func_step(x_t, t, v=v, num_steps=num_steps, dt=dt, lmbd=lmbd, return_all=True, use_clip=use_clip, **kwargs)
                 x_t = mu_t
             else:
-                x_t, _, _, _  = func_step(x_t, t, v=v, num_steps=num_steps, dt=dt, lmbd=lmbd, return_all=True, use_clip=use_clip)
+                x_t, _, _, _  = func_step(x_t, t, v=v, num_steps=num_steps, dt=dt, lmbd=lmbd, return_all=True, use_clip=use_clip, **kwargs)
 
             # save
             x_t = x_t.detach().clone()
