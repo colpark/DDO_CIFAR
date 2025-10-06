@@ -11,6 +11,8 @@ by Jae Hyun Lim\*, Nikola B Kovachki\*, Ricardo Baptista\*, Christopher Beckham,
 ## Experiments on CIFAR-10 Dataset
 CIFAR-10 experiments use DDO directly in pixel space (no SDF transform needed).
 
+### Standard CIFAR-10 Generation
+
 ### Training
 ```bash
 bash train_cifar10.sh ${EXP_PATH} ${DATA_PATH} ${FID_PATH}
@@ -50,6 +52,46 @@ python main.py --command_type=test \
   --eval_use_ema --ema_decay=0.999 --eval_img_height=32 --eval_batch_size=512 --eval_num_samples=50000 --eval_resize_mode=tensor --eval_interpolation=bilinear --fid_dir=${FID_PATH} \
   --checkpoint_file=checkpoint_fid.pt \
   --eval_fid
+```
+
+### Sparse CIFAR-10 Image Reconstruction
+
+Reconstruct full images from 10% observed pixels (randomly sampled).
+
+**Interactive Demo:**
+```bash
+jupyter notebook notebooks/cifar10_sparse_reconstruction.ipynb
+```
+
+This notebook demonstrates:
+- Loading sparse CIFAR-10 dataset (10% context pixels, 10% query pixels)
+- Visualizing different sampling patterns (random, grid, center)
+- Data format for conditional reconstruction training
+
+**Key Features:**
+- **Context**: 10% randomly observed pixels (input)
+- **Query**: 10% additional pixels for training supervision
+- **Task**: Predict all unobserved pixels given context
+- **Training**: Different random masks each iteration
+- **Evaluation**: Fixed masks for consistent comparison
+
+**Usage Example:**
+```python
+from utils.sparse_datasets import SparseImageDatasetWrapper
+
+# Wrap any image dataset
+sparse_dataset = SparseImageDatasetWrapper(
+    dataset=cifar10_dataset,
+    context_ratio=0.1,   # 10% observed
+    query_ratio=0.1,     # 10% query for training
+    mode='train'
+)
+
+# Each sample contains:
+# - context_coords: (num_context, 2) - positions of observed pixels
+# - context_values: (num_context, 3) - RGB values at observed positions
+# - query_coords: (num_query, 2) - positions to predict
+# - query_values: (num_query, 3) - ground truth for training
 ```
 
 ## Experiments on MNIST-SDF Dataset

@@ -218,6 +218,40 @@ def group_norm(x, ref_freq, num_groups, dim=1, EPS=1e-6):
         raise NotImplementedError
 
 
+class SpectralCutoff2d(nn.Module):
+    """Spectral cutoff layer that zeros out high frequency modes."""
+    def __init__(self, modes_height, modes_width):
+        super().__init__()
+        self.modes_height = modes_height
+        self.modes_width = modes_width
+
+    def forward(self, x):
+        """
+        Apply spectral cutoff to input tensor.
+        Args:
+            x: Input tensor of shape (batch, channels, height, width)
+        Returns:
+            Tensor with high frequencies zeroed out
+        """
+        if x.dim() == 3:
+            # 1D case: (batch, channels, height)
+            if x.shape[-1] > self.modes_height:
+                x = x.clone()
+                x[:, :, self.modes_height:] = 0
+        elif x.dim() == 4:
+            # 2D case: (batch, channels, height, width)
+            if x.shape[-2] > self.modes_height or x.shape[-1] > self.modes_width:
+                x = x.clone()
+                if x.shape[-2] > self.modes_height:
+                    x[:, :, self.modes_height:, :] = 0
+                if x.shape[-1] > self.modes_width:
+                    x[:, :, :, self.modes_width:] = 0
+        return x
+
+    def extra_repr(self) -> str:
+        return f'modes_height={self.modes_height}, modes_width={self.modes_width}'
+
+
 class SpectralGroupNorm(nn.Module):
     def __init__(self, num_groups, num_channels, modes_height, affine=True, eps=1e-6, cutoff=False, **kwargs):
         super().__init__()
