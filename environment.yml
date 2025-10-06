@@ -1,0 +1,30 @@
+name: ddo-cifar10
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.9
+  - pytorch=1.12.0
+  - torchvision=0.13.0
+  - torchaudio=0.12.0
+  - cudatoolkit=11.6
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn
+  - pillow
+  - cython
+  - ipython
+  - jupyter
+  - notebook
+  - ipykernel
+  - tqdm
+  - pip
+  - pip:
+    - tensorboard
+    - tensorflow
+    - sympy
+    - ipdb
+    - lmdb
