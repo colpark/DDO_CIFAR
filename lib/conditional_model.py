@@ -49,11 +49,12 @@ class ConditionalDDOModel(nn.Module):
         # Projection layer: combines noisy image + context features
         # Input: (B, input_dim + context_feature_dim, H, W)
         # Output: (B, input_dim, H, W)
+        hidden_dim = 64  # Use fixed hidden dimension divisible by common group sizes
         self.combine = nn.Sequential(
-            nn.Conv2d(input_dim + context_feature_dim, input_dim * 2, kernel_size=3, padding=1),
-            nn.GroupNorm(8, input_dim * 2),
+            nn.Conv2d(input_dim + context_feature_dim, hidden_dim, kernel_size=3, padding=1),
+            nn.GroupNorm(8, hidden_dim),
             nn.SiLU(),
-            nn.Conv2d(input_dim * 2, input_dim, kernel_size=3, padding=1),
+            nn.Conv2d(hidden_dim, input_dim, kernel_size=3, padding=1),
         )
 
     @property
