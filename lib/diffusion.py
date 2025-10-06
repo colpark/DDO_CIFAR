@@ -675,17 +675,17 @@ class DenoisingDiffusion(nn.Module):
         self.weight_method = weight_method
 
     # model
-    def model(self, x, temp, v=None, level=None):
+    def model(self, x, temp, v=None, level=None, **kwargs):
         if self.use_lmbd:
             _, lmbd_normalized, _ = self.get_lmbd_pdf(temp, dim=0)
-            return self._model(x=x, temp=lmbd_normalized, v=v, level=level)
+            return self._model(x=x, temp=lmbd_normalized, v=v, level=level, **kwargs)
         else:
-            return self._model(x=x, temp=temp, v=v, level=level)
+            return self._model(x=x, temp=temp, v=v, level=level, **kwargs)
 
     # epsilon prediction
     def epsilon(self, y, s, v=None, level=None, **kwargs):
         if self.model_type == 'epsilon':
-            return self.model(x=y, temp=s.view(-1), v=v, level=level)
+            return self.model(x=y, temp=s.view(-1), v=v, level=level, **kwargs)
         else:
             raise NotImplementedError
 
